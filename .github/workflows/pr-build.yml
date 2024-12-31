@@ -1,0 +1,46 @@
+name: PR Build and Test
+
+on:
+  pull_request:
+    branches:
+      - main  # 对 `main` 分支的 PR 触发此工作流
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 1: 检出代码
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Step 2: 设置 Python 环境
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: 3.9  # 指定 Python 版本
+
+    # Step 3: 安装依赖
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # Step 4: 运行代码质量检查 (可选，例如使用 flake8 或 pylint)
+    - name: Lint code with flake8
+      run: |
+        pip install flake8
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+    # Step 5: 运行测试 (如果有单元测试)
+    - name: Run tests
+      run: |
+        pip install pytest
+        pytest
+
+    # Step 6: 构建项目 (如果需要打包)
+    - name: Build the application
+      run: |
+        echo "Building application..."
+        python app.py  # 如果 app.py 是入口文件
