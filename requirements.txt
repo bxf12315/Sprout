@@ -4,3 +4,5 @@ flask_marshmallow
 flask_migrate
 marshmallow-sqlalchemy
 celery[redis,redisbeat]
+boto3
+botocore
