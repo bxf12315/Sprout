@@ -6,6 +6,7 @@ marshmallow-sqlalchemy
 celery[redis,redisbeat]
 pytest
 flask-testing
+minio
 
 # ML
 numpy
