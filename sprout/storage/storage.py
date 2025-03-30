@@ -4,12 +4,13 @@ from minio.error import S3Error
 import io
 from minio import Minio
 from typing import Any, Union, BinaryIO
+from sprout.config import Config
 
 class MinIOModelStorage:
     def __init__(self):
-        self.client = client = Minio("127.0.0.1:9000",
-        access_key="yAXD3K1ubErUUhGpMqYB",
-        secret_key="0txucWYIqpDLUf2R12gjHxrZld2ZNoKiLBtgPe1H",
+        self.client = client = Minio(Config.MINIO_URI,
+        access_key=Config.MINIO_ACCESS_KEY,
+        secret_key=Config.MINIO_SECRET_KEY,
         secure=False,
         )
         self.bucket_name = "sprout"

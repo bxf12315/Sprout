@@ -206,6 +206,7 @@ def train():
 
     return jsonify({
         'train_result': "success",
+        'model_id': new_model.model_id,
     }), 202
 
 
