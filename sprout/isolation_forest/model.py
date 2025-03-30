@@ -8,9 +8,9 @@ from joblib import dump, load
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-from storage.storage import MinIOModelStorage
+from sprout.storage.storage import MinIOModelStorage
 
-def train_isolation_forest_model(file_path, n_estimators=100, contamination=0.01, random_state=42, model_filename=None):
+def train_isolation_forest_model(file_path, n_estimators=100, contamination=0.0001, random_state=42, model_filename=None):
     """
     Train an Isolation Forest model for anomaly detection using CSV data.
     
@@ -20,7 +20,7 @@ def train_isolation_forest_model(file_path, n_estimators=100, contamination=0.01
         Path to the CSV file containing the data
     n_estimators : int, default=100
         Number of decision trees in the ensemble
-    contamination : float, default=0.01
+    contamination : float, default=0.0001
         Expected proportion of outliers in the dataset
     random_state : int, default=42
         Random seed for reproducibility
@@ -63,7 +63,6 @@ def train_isolation_forest_model(file_path, n_estimators=100, contamination=0.01
     # dump(isolation_forest, model_filename)
     model_buffer = io.BytesIO()
     joblib.dump(isolation_forest, model_buffer)
-    
     # Also save the scaler for future use
     scaler_filename = model_filename.replace('.joblib', '_scaler.joblib')
     # dump(scaler, scaler_filename)
@@ -74,17 +73,31 @@ def train_isolation_forest_model(file_path, n_estimators=100, contamination=0.01
     bucket_name = "health"
         
     storage = MinIOModelStorage()
-    storage.upload_model(model_buffer,bucket_name, model_filename)
-    storage.upload_model(model_scaler_buffer,bucket_name, scaler_filename)
-    
+    storage.upload_model(model_buffer, bucket_name, model_filename)
+    storage.upload_model(model_scaler_buffer, bucket_name, scaler_filename)
+
+    def get_model_info(bucket_name, object_name):
+        obj_stat = storage.client.stat_object(bucket_name, object_name)
+
+        file_size = obj_stat.size  # Size in bytes
+        file_hash = obj_stat.etag  # ETag (MD5 hash for small files)
+
+        return file_size, file_hash
+
+    model_size, model_hash = get_model_info(bucket_name, model_filename)
+    scaler_size, scaler_hash = get_model_info(bucket_name, scaler_filename)
     print(f"Model saved to: {model_filename}")
     print(f"Scaler saved to: {scaler_filename}")
-    
+
     return {
-        'model': isolation_forest,
-        'scaler': scaler,
-        'model_filename': model_filename,
-        'scaler_filename': scaler_filename
+        "model": isolation_forest,
+        "scaler": scaler,
+        "model_filename": model_filename,
+        "scaler_filename": scaler_filename,
+        "model_size": model_size,
+        "model_hash": model_hash,
+        "scaler_size": scaler_size,
+        "scaler_hash": scaler_hash
     }
     
 

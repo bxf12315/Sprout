@@ -1,15 +1,20 @@
 import uuid
 
+from datetime import datetime
+
 from flask import Blueprint, request, jsonify
 from sprout.extensions import db
-from sprout.models import Job
+from sprout.models import Job, Model, ModelFile, TrainingInfo
 from sprout.schemas import JobSchema
+from sprout.isolation_forest.model import predict_with_isolation_forest, train_isolation_forest_model
 
 job_schema = JobSchema()
 jobs_schema = JobSchema(many=True)
 
 job_bp = Blueprint('job_bp', __name__)
 ai_bp = Blueprint('ai_bp', __name__)
+
+BUCKET = "minio://health/"
 
 # Import Celery task inside the route function to avoid circular dependency
 @job_bp.route('/jobs', methods=['POST'])
@@ -115,3 +120,101 @@ def get_ai_job_status(job_id):
         'status': job.status,
         'params': job.params
     })
+
+
+@ai_bp.route('/ai/predict', methods=['POST'])
+def predict():
+    """
+    API endpoint to detect anomalies in new data.
+    """
+    data = request.get_json()
+    model_id_value = data.get("model_id")
+    model = ModelFile.query.filter_by(model_id=model_id_value, file_type="model").first()
+    scaler = ModelFile.query.filter_by(model_id=model_id_value, file_type="scaler").first()
+    training_data = data.get("training_data")
+    model_path = model.file_path.replace(BUCKET, "")
+    scaler_path = scaler.file_path.replace(BUCKET, "")
+
+    predict_result = predict_with_isolation_forest(model_path, training_data, scaler_path)
+    return jsonify({
+        'predict_result': predict_result.tolist(),
+    }), 202
+
+
+@ai_bp.route('/ai/train', methods=['POST'])
+def train():
+    """
+    API endpoint to train model.
+    """
+    file_path = './kuka_axis_run_info_1345880_202412231603.csv'
+    result = train_isolation_forest_model(file_path)
+
+    model_filename = result["model_filename"]
+    scaler_filename = result["scaler_filename"]
+    model_size = result["model_size"]
+    model_hash = result["model_hash"]
+    scaler_size = result["scaler_size"]
+    scaler_hash = result["scaler_hash"]
+    # Only extract following params and save.
+    keys_to_extract = {'contamination', 'n_estimators', 'random_state'}
+    params = result["model"].get_params()
+    filtered_params = {key: params[key] for key in keys_to_extract}
+    new_model = Model(
+        name="IsolationForest",
+        robot_id="robot_001",
+        description="One more model added",
+        created_at=datetime.now()
+    )
+
+    new_training = TrainingInfo(
+        model=new_model,
+        robot_id=new_model.robot_id,
+        hyperparameter=filtered_params,
+        training_status="complete",
+        created_at=datetime.now()
+    )
+
+    file_path = BUCKET  + model_filename
+    new_model_file = ModelFile(
+        model=new_model,
+        file_name=model_filename,
+        file_type="model",
+        file_path=file_path,
+        file_size=model_size,
+        file_format="joblib",
+        file_hash=model_hash,
+        created_at=datetime.now()
+    )
+
+    file_path = BUCKET + scaler_filename
+    new_scaler_file = ModelFile(
+        model=new_model,
+        file_name=scaler_filename,
+        file_type="scaler",
+        file_path=file_path,
+        file_size=scaler_size,
+        file_format="joblib",
+        file_hash=scaler_hash,
+        created_at=datetime.now()
+    )
+
+    db.session.add(new_model)
+    db.session.add(new_training)
+    db.session.add(new_model_file)
+    db.session.add(new_scaler_file)
+    db.session.commit()
+
+    return jsonify({
+        'train_result': "success",
+    }), 202
+
+
+# API used for test
+@ai_bp.route('/ai/get', methods=['GET'])
+def get():
+    models = ModelFile.query.all()
+
+    for model in models:
+        print(model.model_id)
+
+    return jsonify({"message": "Done"}), 200
