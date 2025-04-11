@@ -7,7 +7,7 @@ from sklearn.preprocessing import StandardScaler
 from joblib import dump, load
 import matplotlib.pyplot as plt
 from datetime import datetime
-
+from sprout.common.model_cache import cached_loading
 from sprout.storage.storage import MinIOModelStorage
 
 
@@ -22,7 +22,7 @@ def train_isolation_forest_model(
 ):
     """
     Train an Isolation Forest model for anomaly detection using CSV data.
-    
+
     Parameters:
     -----------
     file_path : str
@@ -37,30 +37,32 @@ def train_isolation_forest_model(
         Random seed for reproducibility
     model_filename : str, default=None
         Filename to save the trained model. If None, a default name with timestamp will be used.
-    
+
     Returns:
     --------
     dict
         Dictionary containing the trained model, scaler, and model filename
     """
-    
+
     storage = MinIOModelStorage()
-        
+
     # 1. Load and preprocess data
-    data = pd.read_csv(storage.download_model(bucket,file_path),na_values=[r'\N', 'N', 'null', 'NULL', ''])
+    data = pd.read_csv(
+        storage.download_model(bucket, file_path),
+        na_values=[r"\N", "N", "null", "NULL", ""],
+    )
     data["time"] = pd.to_datetime(data["collect_time"])
     data["hour"] = data["time"].dt.hour
     data["dayofweek"] = data["time"].dt.dayofweek
     data["is_weekend"] = data["dayofweek"].isin([5, 6]).astype(int)
-    
+
     # 2. Select features
     if not features:
-        features = ["torque", "temperature", "current" ]
-    
+        features = ["torque", "temperature", "current"]
+
     data = data.dropna(subset=features)
     X = data[features]
 
-    print(X)
     # 3. Standardize the data
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
@@ -72,22 +74,21 @@ def train_isolation_forest_model(
         random_state=random_state,
     )
     isolation_forest.fit(X_scaled)
-    
-     # 5. Save the model
+
+    # 5. Save the model
     model_filename = stamp_filename(model_filename)
-    
+
     # The destination bucket and filename on the MinIO server
     bucket_name = "health"
-    
+
     # Calculate anomaly scores (lower score = more anomalous)
     scores = isolation_forest.decision_function(X_scaled)
-   
+
     scores_filename = model_filename.replace(".joblib", "_scores.joblib")
     scores_buffer = io.BytesIO()
     joblib.dump(scores, scores_buffer)
-    
+
     storage.upload_model(scores_buffer, bucket_name, scores_filename)
-   
 
     # dump(isolation_forest, model_filename)
     model_buffer = io.BytesIO()
@@ -126,7 +127,7 @@ def train_isolation_forest_model(
         "scaler_hash": scaler_hash,
         "scores_filename": scores_filename,
         "scores_size": scores_size,
-        "scores_hash": scores_hash
+        "scores_hash": scores_hash,
     }
 
 
@@ -156,8 +157,9 @@ def predict_with_isolation_forest(model, data_array, scaler, scores_path):
         Array with shape (n_samples, 4), each row containing [torque, temperature, current, score]
     """
     storage = MinIOModelStorage()
-
-    isolation_forest = joblib.load(storage.download_model("health", model))
+    # isolation_forest_model = storage.download_model("health", model)
+    isolation_forest = cached_loading(model, storage)
+    # isolation_forest = joblib.load(storage.download_model("health", model))
 
     # Convert input to numpy array
     X = np.array(data_array)
@@ -172,7 +174,8 @@ def predict_with_isolation_forest(model, data_array, scaler, scores_path):
     #     )
 
     # Load and apply scaler
-    scaler = joblib.load(storage.download_model("health", scaler))
+
+    scaler = cached_loading(scaler, storage)
 
     X_scaled = scaler.transform(X)
 
@@ -181,47 +184,16 @@ def predict_with_isolation_forest(model, data_array, scaler, scores_path):
 
     # Calculate anomaly scores (lower score = more anomalous)
     scores = isolation_forest.decision_function(X_scaled)
-    
 
-    base_scores = joblib.load(storage.download_model("health", scores_path))
- 
+    base_scores = cached_loading(scores_path, storage)
+
     # Calculate health score percentage (0-100, higher = healthier)
     min_score = base_scores.min()
     max_score = base_scores.max()
-    
+
     health_score_percentage = (scores - min_score) / (max_score - min_score) * 100
 
     # Combine original features with anomaly scores and health percentage
     result = np.column_stack([X, anomaly_labels, scores, health_score_percentage])
 
     return result
-
-
-# Example usage:
-if __name__ == "__main__":
-    file_path = "../../kuka_axis_run_info_1345880_202412231603.csv"
-    result = train_isolation_forest_model(file_path)
-    print(result)
-
-    model = result["model"]
-    scaler = result["scaler"]
-    model_filename = result["model_filename"]
-    scaler_filename = result["scaler_filename"]
-
-    print("Model:", model)
-    print("Scaler:", scaler)
-    print("Model filename:", model_filename)
-    print("Scaler filename:", scaler_filename)
-
-    training_data = [
-        [1.2, 45.6, 0.8],  # [torque, temperature, current]
-        [1.3, 46.2, 0.85],
-        [1.1, 45.0, 0.75],
-        # ... more training data
-        [1.5, 47.0, 0.9],
-    ]
-
-    predict_result = predict_with_isolation_forest(
-        model_filename, training_data, scaler_filename
-    )
-    print(predict_result)

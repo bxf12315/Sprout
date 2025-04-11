@@ -122,8 +122,7 @@ def run_upload_file():
     robot_id = request.form.get("robot_id")
     if not robot_id:
         return jsonify({"success": False, "error": "Missing robot_id parameter"}), 400
-    
-  
+
     if file and allowed_file(file.filename):
         try:
             filename = secure_filename(file.filename)
@@ -250,7 +249,7 @@ def predict():
     model_path = model.file_path.replace(BUCKET, "")
     scaler_path = scaler.file_path.replace(BUCKET, "")
     scores_path = scores.file_path.replace(BUCKET, "")
-    
+
     predict_result = predict_with_isolation_forest(
         model_path, training_data, scaler_path, scores_path
     )
@@ -273,12 +272,9 @@ def train():
     data = request.get_json()
     file_path = data.get("file_path")
     features = data.get("features")
-    print(file_path)
-    
+
     resource_file = file_path.replace(BUCKET, "")
-    result = train_isolation_forest_model(BUCKET_NAME, resource_file,features)
-    print("/ai/train")
-    print(result)
+    result = train_isolation_forest_model(BUCKET_NAME, resource_file, features)
 
     model_filename = result["model_filename"]
     scaler_filename = result["scaler_filename"]
@@ -331,7 +327,7 @@ def train():
         file_hash=scaler_hash,
         created_at=datetime.now(),
     )
-    
+
     file_path = BUCKET + scores_filename
     new_scores_file = ModelFile(
         model=new_model,

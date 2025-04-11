@@ -16,7 +16,7 @@ class Config:
     )
     broker_url = "redis://127.0.0.1:6379/0"
     result_backend = "redis://127.0.0.1:6379/0"
-
+    CACHE_PATH = os.getenv("CACHE_PATH", "~/data/.cache")
     beat_schedule = {
         "run-task-every-2-minutes": {
             "task": "sprout.celery_worker.scheduled_task",
